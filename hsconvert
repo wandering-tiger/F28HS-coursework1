@@ -1,0 +1,180 @@
+#!/usr/bin/python3
+# Convert from PPM images to HS images, or vice versa.
+# Copyright 2024 Heriot-Watt University (written by Adam Sampson)
+#
+# This is written using Python idioms, and it's not intended to be
+# efficient; don't use it as a model for your C program.
+#
+# This is version 1.
+
+import argparse
+import os
+import random
+import re
+import struct
+import subprocess
+import sys
+import tempfile
+
+# The viewer program to use when only one filename is specified
+VIEWER = 'gpicview'
+
+def die(*s):
+    print(''.join(map(str, s)), file=sys.stderr)
+    sys.exit(1)
+
+def enc(s):
+    return s.encode('ASCII')
+
+def ppm_to_hs(args):
+    """Convert a PPM (P6 8-bit) image to one of the HS formats."""
+
+    try:
+        with open(args.input, 'rb') as f:
+            data = f.read()
+    except IOError:
+        die('Cannot read input file: ', args.input)
+
+    # Parse the PPM header
+    ws = br'[ \t\r\n]'
+    m = re.match(br'P6' + ws + br'+'
+                 + br'([0-9]+)' + ws + br'+([0-9]+)' + ws + br'+'
+                 + br'([0-9]+)' + ws, data)
+    if m is None:
+        die('Unrecognised input file format: ', args.input)
+    width, height, maxval = map(int, m.group(1, 2, 3))
+    if maxval != 255:
+        die('Only 8-bit input files are supported: ', args.input)
+    expect_len = width * height * 3
+
+    # Extract the data
+    data = data[m.end():]
+    if len(data) != expect_len:
+        die('Input data length incorrect: ', args.input)
+
+    def make_ws(num=None):
+        """Return num whitespace characters."""
+        if not args.randomise:
+            return b'\n' if num else b' '
+        if num is None:
+            num = random.randint(1, 5)
+        return b''.join(random.choice([b' ', b'\t', b'\r', b'\n'])
+                        for i in range(num))
+
+    with open(args.output, 'wb') as f:
+        # Write header
+        f.write(enc(args.format))
+        f.write(make_ws())
+        f.write(enc(str(width)))
+        f.write(make_ws())
+        f.write(enc(str(height)))
+        if args.format in ('HS8', 'HS16'):
+            f.write(make_ws(1))
+
+        # Write data
+        if args.format == 'HS8':
+            f.write(data)
+        elif args.format == 'HS16':
+            f.write(struct.pack(str(expect_len) + 'H',
+                                *[int((v * 65535) / 255) for v in data]))
+        elif args.format == 'HSDEC':
+            for v in data:
+                f.write(make_ws())
+                f.write(enc(str(v)))
+        elif args.format == 'HSHEX':
+            for v in data:
+                f.write(make_ws())
+                s = '{0:x}'.format(int((v * 65535) / 255))
+                if args.randomise and random.randint(0, 1) == 0:
+                    s = s.upper()
+                f.write(enc(s))
+
+def hs_to_ppm(args):
+    """Convert an HS image to PPM."""
+
+    try:
+        with open(args.input, 'rb') as f:
+            data = f.read()
+    except IOError:
+        die('Cannot read input file: ', args.input)
+
+    # Parse the HS header
+    ws = br'[ \t\r\n]'
+    m = re.match(br'(HS8|HS16|HSDEC|HSHEX)' + ws + br'+'
+                 + br'([0-9]+)' + ws + br'+([0-9]+)' + ws, data)
+    if m is None:
+        die('Input header could not be understood: ', args.input)
+    fmt = m.group(1)
+    width, height = map(int, m.group(2, 3))
+    expect_len = width * height * 3
+
+    # Extract the data and convert to P6 8-bit format
+    data = data[m.end():]
+    data_out = None
+    if fmt == b'HS8':
+        if len(data) != expect_len:
+            die('Input data length incorrect: ', args.input)
+        data_out = data
+    elif fmt == b'HS16':
+        if len(data) != expect_len * 2:
+            die('Input data length incorrect: ', args.input)
+        data_out = bytes(int((v * 255) / 65535)
+                         for v in struct.unpack(str(expect_len) + 'H', data))
+    elif fmt == b'HSDEC':
+        fields = data.split()
+        if len(fields) != expect_len:
+            die('Input data length incorrect: ', args.input)
+        try:
+            data_out = bytes(map(int, fields))
+        except ValueError:
+            die('Error reading decimal data: ', args.input)
+    elif fmt == b'HSHEX':
+        fields = data.split()
+        if len(fields) != expect_len:
+            die('Input data length incorrect: ', args.input)
+        try:
+            data_out = bytes(int((int(s, 16) * 255) / 65535) for s in fields)
+        except ValueError:
+            die('Error reading hex data: ', args.input)
+
+    with open(args.output, 'wb') as f:
+        # Write header
+        f.write(b'P6\n')
+        f.write(enc(str(width)) + b' ' + enc(str(height)) + b'\n255\n')
+
+        # Write data
+        f.write(data_out)
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+        description='Convert between PPM and HS images, or view HS images.',
+        epilog='If no output filename is given, the input file will be'
+               + ' converted to a temporary PPM file and viewed using '
+               + VIEWER + '.')
+    parser.add_argument('-f', '--format', metavar='FORMAT',
+                        type=str, default='PPM',
+                        help='output format: PPM (default), HS8, HS16, HSDEC, HSHEX')
+    parser.add_argument('-r', '--randomise', action='store_true',
+                        help='add random format variations to HS output')
+    parser.add_argument('input', metavar='FILE',
+                        help='input filename')
+    parser.add_argument('output', metavar='FILE', nargs='?',
+                        help='output filename')
+    args = parser.parse_args()
+
+    if args.output is None:
+        if args.format != 'PPM':
+            die('Viewing only works with PPM output format')
+        with tempfile.TemporaryDirectory() as td:
+            args.output = os.path.join(td, 'out.ppm')
+            hs_to_ppm(args)
+            try:
+                subprocess.call([VIEWER, args.output])
+            except FileNotFoundError:
+                die('Viewer ', VIEWER, ' not found; try installing it?')
+    elif args.format == 'PPM':
+        hs_to_ppm(args)
+    elif args.format in ('HS8', 'HS16', 'HSDEC', 'HSHEX'):
+        ppm_to_hs(args)
+    else:
+        die('Unrecognised output format: ', args.format)
