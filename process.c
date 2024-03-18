@@ -229,17 +229,29 @@ int main(int argc, char *argv[])
     /* TODO: Remove this if you don't need to use rand() */
     srand(time(NULL));
 
+    // read the number of input images
+    int img_num=atoi(argv[1]);
+    // create the arrays
+    struct Image **image_list = (struct Image **)malloc(img_num * sizeof(struct Image *));
+    struct Image **out_list = (struct Image **)malloc(img_num * sizeof(struct Image *));
+
     /* Check command-line arguments */
     // modify the argc number for noise task
-    if (argc != 5) {
+    if (argc != 4+2*img_num) {
         fprintf(stderr, "Usage: process INPUTFILE OUTPUTFILE\n");
         return 1;
     }
 
     /* Load the input image */
-    struct Image *in_img = load_image(argv[2]);
-    if (in_img == NULL) {
-        return 1;
+    // struct Image *in_img = load_image(argv[2]);
+    // if (in_img == NULL) {
+    //     return 1;
+    // }
+    for(int i=0;i<img_num;i++){
+        image_list[i] = load_image(argv[3+i]);
+        if (image_list[i] == NULL) {
+            return 1;
+        }
     }
 
     /* Test of saving the input image */
@@ -256,32 +268,66 @@ int main(int argc, char *argv[])
     // }
 
     /* Apply the first process */
-    struct Image *out_img = apply_NOISE(in_img,argv[4]);
-    if (out_img == NULL) {
-        fprintf(stderr, "First process failed.\n");
-        free_image(in_img);
+    // struct Image *out_img = apply_NOISE(in_img,argv[4]);
+    // if (out_img == NULL) {
+    //     fprintf(stderr, "First process failed.\n");
+    //     free_image(in_img);
+    //     return 1;
+    // }
+    for(int i=0;i<img_num;i++){
+        out_list[i] = apply_NOISE(image_list[i],argv[3+2*img_num]);
+        if (out_list[i] == NULL) {
+            fprintf(stderr, "First process failed.\n");
+            free_image(image_list[i]);
         return 1;
+    }
     }
 
     /* Apply the second process */
-    struct Image *reference_img = load_image(argv[1]);
-    if (!apply_COMP(in_img,reference_img)) {
-        fprintf(stderr, "Second process failed.\n");
-        free_image(in_img);
-        free_image(out_img);
-        return 1;
+    struct Image *reference_img = load_image(argv[2]);
+    // if (!apply_COMP(in_img,reference_img)) {
+    //     fprintf(stderr, "Second process failed.\n");
+    //     free_image(in_img);
+    //     free_image(out_img);
+    //     return 1;
+    // }
+    for(int i=0;i<img_num;i++){
+        if (!apply_COMP(image_list[i],reference_img)) {
+            fprintf(stderr, "Second process failed.\n");
+            free_image(image_list[i]);
+            free_image(out_list[i]);
+            return 1;
+        }
     }
     free_image(reference_img);
 
     /* Save the output image */
-    if (!save_image(out_img, argv[3])) {
-        fprintf(stderr, "Saving image to %s failed.\n", argv[3]);
-        free_image(in_img);
-        free_image(out_img);
-        return 1;
+    // if (!save_image(out_img, argv[3])) {
+    //     fprintf(stderr, "Saving image to %s failed.\n", argv[3]);
+    //     free_image(in_img);
+    //     free_image(out_img);
+    //     return 1;
+    // }
+    for(int i=0;i<img_num;i++){
+        if(!save_image(out_list[i], argv[3+img_num+i])){
+            fprintf(stderr, "Saving image to %s failed.\n", argv[3+img_num+i]);
+            free_image(image_list[i]);
+            free_image(out_list[i]);
+            return 1;
+        }
     }
 
-    free_image(in_img);
-    free_image(out_img);
+    // free images
+    // free_image(in_img);
+    // free_image(out_img);
+    for(int i=0;i<img_num;i++){
+        free_image(image_list[i]);
+        free_image(out_list[i]);
+    }
+
+    // free arrays
+    free(image_list);
+    free(out_list);
+
     return 0;
 }
