@@ -65,27 +65,40 @@ struct Image *load_image(const char *filename)
 
     /* Allocate the Image object, and read the image from the file */
     /* TODO: Question 2b */
-    struct Image *img = (struct Image*)malloc(sizeof(struct Image));
-
+    struct Image *img = malloc(sizeof(struct Image));
+    // check malloc
+    if(img==NULL){
+        printf("Fail to allocate by malloc\n");
+        return NULL;
+    }
     // read the header
-    char* hshex=(char*)malloc(sizeof(char)*5);
-    if(fscanf(f,"%s %d %d",hshex,&img->width,&img->height)==EOF){
+    char hshex[6];
+    if(fscanf(f,"%s %d %d",hshex,&img->width,&img->height)!=3){
         printf("wrong image\n");
         return img;
     }
-    free(hshex);
 
     //print the size of image
     printf("image size is %d, %d\n",img->width,img->height);
 
     // read the image
-    img->pixel=(struct Pixel**)malloc(sizeof(struct Pixel*)*img->height);
+    // img->pixel=malloc(sizeof(struct Pixel*)*img->height);
+    img->pixel=calloc(img->height, sizeof(struct Pixel*));
+    if(img->pixel==NULL){
+        printf("Fail to allocate by calloc\n");
+        return NULL;
+    }
     for (int i=0; i<img->height;i++) {
-        img->pixel[i] = (struct Pixel*)malloc(sizeof(struct Pixel)*img->width);
+        // img->pixel[i] = malloc(sizeof(struct Pixel)*img->width);
+        img->pixel[i] = calloc(img->width, sizeof(struct Pixel));
+        if(img->pixel[i]==NULL){
+            printf("Fail to allocate by calloc\n");
+            return NULL;
+        }
     }
     for(int i=0;i<img->height;i++){
         for(int j=0;j<img->width;j++){
-            if(fscanf(f,"%x %x %x",&img->pixel[i][j].red,&img->pixel[i][j].green,&img->pixel[i][j].blue)==EOF){
+            if(fscanf(f,"%x %x %x",&img->pixel[i][j].red,&img->pixel[i][j].green,&img->pixel[i][j].blue)!=3){
                 printf("wrong image\n");
                 return img;
             }
@@ -93,10 +106,9 @@ struct Image *load_image(const char *filename)
     }
 
     /* Close the file */
-    fclose(f);
-
-    if (img == NULL) {
-        fprintf(stderr, "File %s could not be read.\n", filename);
+    // fclose(f);
+    if(fclose(f)==EOF){
+        fprintf(stderr, "File %s failed to close.\n", filename);
         return NULL;
     }
 
@@ -123,7 +135,11 @@ bool save_image(const struct Image *img, const char *filename)
             }
         }
     }
-    fclose(f);
+    // fclose(f);
+    if(fclose(f)==EOF){
+        fprintf(stderr, "File %s failed to close.\n", filename);
+        return NULL;
+    }
     return true;
 }
 
@@ -133,12 +149,26 @@ struct Image *copy_image(const struct Image *source)
 {
     /* TODO: Question 2d */
     // allocate struct Image
-    struct Image *img = (struct Image*)malloc(sizeof(struct Image));
+    struct Image *img = malloc(sizeof(struct Image));
+    if(img==NULL){
+        printf("Fail to allocate by malloc\n");
+        return NULL;
+    }
     img->width=source->width;
     img->height=source->height;
-    img->pixel=(struct Pixel**)malloc(sizeof(struct Pixel*)*img->height);
+    // img->pixel=malloc(sizeof(struct Pixel*)*img->height);
+    img->pixel=calloc(img->height, sizeof(struct Pixel*));
+    if(img->pixel==NULL){
+        printf("Fail to allocate by calloc\n");
+        return NULL;
+    }
     for (int i=0; i<img->height;i++) {
-        img->pixel[i] = (struct Pixel*)malloc(sizeof(struct Pixel)*img->width);
+        // img->pixel[i] = malloc(sizeof(struct Pixel)*img->width);
+        img->pixel[i] = calloc(img->width, sizeof(struct Pixel));
+        if(img->pixel[i]==NULL){
+            printf("Fail to allocate by calloc\n");
+            return NULL;
+        }
     }
 
     // copy the image ? not sure about how to copy const struct
@@ -158,11 +188,8 @@ struct Image *apply_NOISE(const struct Image *source, const char *ns)
 {
     /* TODO: Question 3 */
     // create a copy of original image
-    struct Image *img = (struct Image*)malloc(sizeof(struct Image));
-    img=copy_image(source);
+    struct Image *img = copy_image(source);
     // generate the rand seed
-    time_t t;
-    srand((unsigned) time(&t));
     // convert strength to int
     int strength=atoi(ns);
     if(strength==0){
@@ -232,25 +259,29 @@ int main(int argc, char *argv[])
     // read the number of input images
     int img_num=atoi(argv[1]);
     // create the arrays
-    struct Image **image_list = (struct Image **)malloc(img_num * sizeof(struct Image *));
-    struct Image **out_list = (struct Image **)malloc(img_num * sizeof(struct Image *));
+    // struct Image **image_list = malloc(img_num * sizeof(struct Image *));
+    // struct Image **out_list = malloc(img_num * sizeof(struct Image *));
+    struct Image **image_list = calloc(img_num, sizeof(struct Image *));
+    struct Image **out_list = calloc(img_num, sizeof(struct Image *));
+    if(image_list==NULL || out_list==NULL){
+        printf("Fail to allocate by calloc\n");
+        return 0;
+    }
 
     /* Check command-line arguments */
     // modify the argc number for noise task
     if (argc != 4+2*img_num) {
         fprintf(stderr, "Usage: process INPUTFILE OUTPUTFILE\n");
-        return 1;
+        // return 1;
+        goto cleanup;
     }
 
     /* Load the input image */
-    // struct Image *in_img = load_image(argv[2]);
-    // if (in_img == NULL) {
-    //     return 1;
-    // }
     for(int i=0;i<img_num;i++){
         image_list[i] = load_image(argv[3+i]);
         if (image_list[i] == NULL) {
-            return 1;
+            // return 1;
+            goto cleanup;
         }
     }
 
@@ -268,58 +299,40 @@ int main(int argc, char *argv[])
     // }
 
     /* Apply the first process */
-    // struct Image *out_img = apply_NOISE(in_img,argv[4]);
-    // if (out_img == NULL) {
-    //     fprintf(stderr, "First process failed.\n");
-    //     free_image(in_img);
-    //     return 1;
-    // }
     for(int i=0;i<img_num;i++){
         out_list[i] = apply_NOISE(image_list[i],argv[3+2*img_num]);
         if (out_list[i] == NULL) {
             fprintf(stderr, "First process failed.\n");
-            free_image(image_list[i]);
-        return 1;
-    }
+            // free_image(image_list[i]);
+            // return 1;
+            goto cleanup;
+        }
     }
 
     /* Apply the second process */
     struct Image *reference_img = load_image(argv[2]);
-    // if (!apply_COMP(in_img,reference_img)) {
-    //     fprintf(stderr, "Second process failed.\n");
-    //     free_image(in_img);
-    //     free_image(out_img);
-    //     return 1;
-    // }
     for(int i=0;i<img_num;i++){
         if (!apply_COMP(image_list[i],reference_img)) {
             fprintf(stderr, "Second process failed.\n");
-            free_image(image_list[i]);
-            free_image(out_list[i]);
-            return 1;
+            // free_image(image_list[i]);
+            // free_image(out_list[i]);
+            // return 1;
+            goto cleanup;
         }
     }
     free_image(reference_img);
 
     /* Save the output image */
-    // if (!save_image(out_img, argv[3])) {
-    //     fprintf(stderr, "Saving image to %s failed.\n", argv[3]);
-    //     free_image(in_img);
-    //     free_image(out_img);
-    //     return 1;
-    // }
     for(int i=0;i<img_num;i++){
         if(!save_image(out_list[i], argv[3+img_num+i])){
             fprintf(stderr, "Saving image to %s failed.\n", argv[3+img_num+i]);
-            free_image(image_list[i]);
-            free_image(out_list[i]);
-            return 1;
+            // free_image(image_list[i]);
+            // free_image(out_list[i]);
+            // return 1;
+            goto cleanup;
         }
     }
-
-    // free images
-    // free_image(in_img);
-    // free_image(out_img);
+cleanup:
     for(int i=0;i<img_num;i++){
         free_image(image_list[i]);
         free_image(out_list[i]);
